@@ -73,9 +73,56 @@ ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include
 
 obj-$(CONFIG_KSU) += kernelsu.o
 
+KSU_NEW_DCACHE_FLUSH := $(shell grep -q __flush_dcache_area $(srctree)/arch/arm64/include/asm/cacheflush.h ; echo $$?)
+$(info -- KSU_NEW_DCACHE_FLUSH: $(KSU_NEW_DCACHE_FLUSH))
+
 obj-$(CONFIG_KPM) += kpm/compact.o
 obj-$(CONFIG_KPM) += kpm/kpm.o
 obj-$(CONFIG_KPM) += kpm/super_access.o
+
+# KernelPatch engine graft (real KPM runtime, native supercall on syscall 45)
+KP_DIR := $(KSU_KERNEL_DIR)/kpm/kp
+KP_INCLUDES := -I$(KP_DIR)/include -I$(KP_DIR)/kernel_base/patch/include/uapi \
+               -I$(KP_DIR)/kernel_base/patch/include -I$(KP_DIR)/kernel_base/include
+KP_VERSION_DEFS := -DKP_LKM_MAJOR=0 -DKP_LKM_MINOR=13 -DKP_LKM_PATCH=9 -DANDROID
+KP_ALLFLAGS := $(KP_INCLUDES) $(KP_VERSION_DEFS) -DKP_NEW_DCACHE_FLUSH=$(KSU_NEW_DCACHE_FLUSH)
+
+obj-$(CONFIG_KPM) += kpm/kp/kpm/module.o
+obj-$(CONFIG_KPM) += kpm/kp/kpm/relo.o
+obj-$(CONFIG_KPM) += kpm/kp/kpm/insn.o
+obj-$(CONFIG_KPM) += kpm/kp/kpm/symbols.o
+obj-$(CONFIG_KPM) += kpm/kp/kpm/kpm.o
+obj-$(CONFIG_KPM) += kpm/kp/hook/hook_engine.o
+obj-$(CONFIG_KPM) += kpm/kp/hook/hook_runtime.o
+obj-$(CONFIG_KPM) += kpm/kp/infra/patch_memory.o
+obj-$(CONFIG_KPM) += kpm/kp/infra/syscall_table.o
+obj-$(CONFIG_KPM) += kpm/kp/infra/symbol_resolver.o
+obj-$(CONFIG_KPM) += kpm/kp/supercall/supercall.o
+obj-$(CONFIG_KPM) += kpm/kp/supercall/dispatch.o
+
+CFLAGS_kpm/kp/kpm/module.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/kpm/relo.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/kpm/insn.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/kpm/symbols.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/kpm/kpm.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kpm.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/hook/hook_runtime.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/infra/patch_memory.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/infra/syscall_table.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/infra/symbol_resolver.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/supercall/supercall.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/supercall/dispatch.o += $(KP_ALLFLAGS)
+
+# hook_engine includes the bare-metal hook chain engine: exempt from CFI/SCS,
+# drop PAC + LTO, keep BTI (trampoline branches into _transitN must be valid).
+CFLAGS_kpm/kp/hook/hook_engine.o += $(KP_ALLFLAGS)
+CFLAGS_kpm/kp/hook/hook_engine.o += -fno-sanitize=cfi -fno-stack-protector -fno-jump-tables
+CFLAGS_kpm/kp/hook/hook_engine.o += -fno-unwind-tables -fno-asynchronous-unwind-tables
+CFLAGS_kpm/kp/hook/hook_engine.o += -std=gnu11 -Wno-strict-prototypes
+CFLAGS_kpm/kp/hook/hook_engine.o += -fno-lto
+CFLAGS_kpm/kp/hook/hook_engine.o += -fno-sanitize=shadow-call-stack
+CFLAGS_kpm/kp/hook/hook_engine.o += -mbranch-protection=bti
+
 ifeq ($(CONFIG_KPM), y)
 $(info -- KPM is enabled)
 else
@@ -85,9 +132,6 @@ endif
 KSU_VERSION := 32601
 $(info -- KernelSU version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
-
-KSU_NEW_DCACHE_FLUSH := $(shell grep -q __flush_dcache_area $(srctree)/arch/arm64/include/asm/cacheflush.h ; echo $$?)
-$(info -- KSU_NEW_DCACHE_FLUSH: $(KSU_NEW_DCACHE_FLUSH))
 
 
 ifndef KSU_EXPECTED_SIZE

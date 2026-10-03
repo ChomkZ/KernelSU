@@ -37,6 +37,13 @@
 #endif
 #include "kpm.h"
 #include "compact.h"
+#include "kp/kpm/module.h"
+#include "kp/hook/hook_runtime.h"
+#include "kp/infra/symbol_resolver.h"
+#include "kp/infra/patch_memory.h"
+#include "kp/infra/syscall_table.h"
+#include "kp/supercall/supercall.h"
+#include "kp/include/kp_lkm.h"
 
 #define KPM_NAME_LEN 32
 #define KPM_ARGS_LEN 1024
@@ -55,69 +62,60 @@ noinline NO_OPTIMIZE void sukisu_kpm_load_module_path(const char *path,
                                                       const char *args,
                                                       void *ptr, int *result)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_load_module_path). "
-            "path=%s args=%s ptr=%p\n",
-            path, args, ptr);
-
-    __asm__ volatile("nop");
+    if (result)
+        *result = (int)kp_load_module_path(path, args, ptr);
+    else
+        pr_err("kpm: load_module_path called without result slot\n");
 }
 EXPORT_SYMBOL(sukisu_kpm_load_module_path);
 
 noinline NO_OPTIMIZE void sukisu_kpm_unload_module(const char *name, void *ptr,
                                                    int *result)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_unload_module). "
-            "name=%s ptr=%p\n",
-            name, ptr);
-
-    __asm__ volatile("nop");
+    if (result)
+        *result = (int)kp_unload_module(name, ptr);
 }
 EXPORT_SYMBOL(sukisu_kpm_unload_module);
 
 noinline NO_OPTIMIZE void sukisu_kpm_num(int *result)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_num).\n");
-
-    __asm__ volatile("nop");
+    if (result)
+        *result = kp_get_module_nums();
 }
 EXPORT_SYMBOL(sukisu_kpm_num);
 
 noinline NO_OPTIMIZE void sukisu_kpm_info(const char *name, char *buf,
                                           int bufferSize, int *size)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_info). "
-            "name=%s buffer=%p\n",
-            name, buf);
-
-    __asm__ volatile("nop");
+    if (size)
+        *size = kp_get_module_info(name, buf, bufferSize);
 }
 EXPORT_SYMBOL(sukisu_kpm_info);
 
 noinline NO_OPTIMIZE void sukisu_kpm_list(void *out, int bufferSize,
                                           int *result)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_list). "
-            "buffer=%p size=%d\n",
-            out, bufferSize);
+    if (result)
+        *result = kp_list_modules((char *)out, bufferSize);
 }
 EXPORT_SYMBOL(sukisu_kpm_list);
 
 noinline NO_OPTIMIZE void sukisu_kpm_control(const char *name, const char *args,
                                              long arg_len, int *result)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_control). "
-            "name=%p args=%p arg_len=%ld\n",
-            name, args, arg_len);
+    char out_msg[256];
 
-    __asm__ volatile("nop");
+    (void)arg_len;
+    if (result)
+        *result = (int)kp_module_control0(name, args, out_msg, sizeof(out_msg));
 }
 EXPORT_SYMBOL(sukisu_kpm_control);
 
 noinline NO_OPTIMIZE void sukisu_kpm_version(char *buf, int bufferSize)
 {
-    pr_info("kpm: Stub function called (sukisu_kpm_version). "
-            "buffer=%p\n",
-            buf);
+    if (buf && bufferSize > 0)
+        snprintf(buf, bufferSize, "kernelpatch-lkm %d.%d.%d (ksu graft)",
+                 KP_LKM_MAJOR, KP_LKM_MINOR, KP_LKM_PATCH);
 }
 EXPORT_SYMBOL(sukisu_kpm_version);
 
@@ -303,3 +301,45 @@ int do_kpm(void __user *arg)
     return sukisu_handle_kpm(cmd.control_code, cmd.arg1, cmd.arg2,
                              cmd.result_code);
 }
+
+static int __init sukisu_kpm_engine_init(void)
+{
+    int rc;
+
+    kp_symres_init();
+
+    rc = kp_patch_memory_init();
+    if (rc) {
+        pr_err("kpm: patch memory init failed: %d\n", rc);
+        return rc;
+    }
+
+    rc = kp_syscall_table_init();
+    if (rc) {
+        pr_err("kpm: syscall table init failed: %d\n", rc);
+        return rc;
+    }
+
+    rc = kp_hook_runtime_init();
+    if (rc) {
+        pr_err("kpm: hook runtime init failed: %d\n", rc);
+        return rc;
+    }
+
+    rc = kp_kpm_init();
+    if (rc) {
+        pr_err("kpm: module loader init failed: %d\n", rc);
+        return rc;
+    }
+
+    rc = kp_supercall_install();
+    if (rc) {
+        pr_err("kpm: native supercall (syscall 45) install failed: %d\n", rc);
+        return rc;
+    }
+
+    pr_info("kpm: KernelPatch engine ready (kp %d.%d.%d, supercall on syscall 45)\n",
+            KP_LKM_MAJOR, KP_LKM_MINOR, KP_LKM_PATCH);
+    return 0;
+}
+late_initcall(sukisu_kpm_engine_init);
