@@ -612,7 +612,7 @@ static int elf_header_check(struct kp_load_info *info)
 	return 0;
 }
 
-struct kp_module modules = { 0 };
+struct kp_module kp_modules_head = { 0 };
 static spinlock_t module_lock;
 
 /* Set while a KPM's init runs: during that window the module is not yet on
@@ -646,7 +646,7 @@ bool kp_kpm_cfi_allowed_addr(unsigned long addr)
 		return false;
 
 	rcu_read_lock();
-	list_for_each_entry(pos, &modules.list, list) {
+	list_for_each_entry(pos, &kp_modules_head.list, list) {
 		start = (unsigned long)pos->start;
 		end = start + pos->size;
 		if (addr >= start && addr < end) {
@@ -725,7 +725,7 @@ int kp_kpm_safe_kallsyms_on_each_symbol(kp_kallsyms_cb_t fn, void *data)
 static struct kp_module *kp_find_module(const char *name)
 {
 	struct kp_module *pos;
-	list_for_each_entry(pos, &modules.list, list)
+	list_for_each_entry(pos, &kp_modules_head.list, list)
 	{
 		if (!strcmp(name, pos->info.name))
 			return pos;
@@ -826,7 +826,7 @@ long kp_load_module(const void *data, int len, const char *args, const char *eve
 
 	if (!rc) {
 		logkfi("[%s] succeed with [%s]\n", mod->info.name, args ? args : "");
-		list_add_tail(&mod->list, &modules.list);
+		list_add_tail(&mod->list, &kp_modules_head.list);
 		goto out;
 	} else {
 		set_load_error(info, "module init failed");
@@ -1015,7 +1015,7 @@ long kp_notify_modules_event(const char *event, const char *args, void __user *r
 	rcu_read_lock();
 
 	struct kp_module *pos;
-	list_for_each_entry(pos, &modules.list, list)
+	list_for_each_entry(pos, &kp_modules_head.list, list)
 	{
 		if (!pos->event || !*pos->event)
 			continue;
@@ -1037,7 +1037,7 @@ int kp_get_module_nums(void)
 
 	struct kp_module *pos;
 	int n = 0;
-	list_for_each_entry(pos, &modules.list, list)
+	list_for_each_entry(pos, &kp_modules_head.list, list)
 	{
 		n++;
 	}
@@ -1057,7 +1057,7 @@ int kp_list_modules(char *out_names, int size)
 
 	struct kp_module *pos;
 	int off = 0;
-	list_for_each_entry(pos, &modules.list, list)
+	list_for_each_entry(pos, &kp_modules_head.list, list)
 	{
 		off += snprintf(out_names + off, size - 1 - off, "%s\n", pos->info.name);
 	}
@@ -1098,7 +1098,7 @@ int kp_get_module_info(const char *name, char *out_info, int size)
 
 int kp_kpm_init(void)
 {
-	INIT_LIST_HEAD(&modules.list);
+	INIT_LIST_HEAD(&kp_modules_head.list);
 	spin_lock_init(&module_lock);
 	kp_kpm_symbols_init();
 
