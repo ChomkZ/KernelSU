@@ -72,6 +72,15 @@ ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include
 
 obj-$(CONFIG_KSU) += kernelsu.o
 
+obj-$(CONFIG_KPM) += kpm/compact.o
+obj-$(CONFIG_KPM) += kpm/kpm.o
+obj-$(CONFIG_KPM) += kpm/super_access.o
+ifeq ($(CONFIG_KPM), y)
+$(info -- KPM is enabled)
+else
+$(info -- KPM is disabled)
+endif
+
 KSU_VERSION := 32601
 $(info -- KernelSU version: $(KSU_VERSION))
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)

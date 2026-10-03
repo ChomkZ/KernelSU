@@ -128,4 +128,13 @@ config KSU_SUSFS_SUS_MAP
 
 endmenu
 
+config KPM
+	bool "Enable SukiSU KPM"
+	depends on KSU && 64BIT
+	default y
+	select KALLSYMS
+	select KALLSYMS_ALL
+	help
+	  Enabling this option will activate the KPM feature (KernelPatch modules).
+
 endmenu
