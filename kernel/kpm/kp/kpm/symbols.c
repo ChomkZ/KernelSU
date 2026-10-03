@@ -271,6 +271,38 @@ static int kp_kpm_is_su_allow_uid(uid_t uid)
 	return kp_is_su_allow_uid(uid) ? 1 : 0;
 }
 
+/* Legacy KP ABI: standalone cred_offset struct (kpms built against the
+ * kpm SDK read cred field offsets from here). */
+struct kp_kpm_cred_offset {
+	int16_t usage_offset, subscribers_offset, magic_offset;
+	int16_t uid_offset, gid_offset, suid_offset, sgid_offset;
+	int16_t euid_offset, egid_offset, fsuid_offset, fsgid_offset;
+	int16_t securebits_offset;
+	int16_t cap_inheritable_offset, cap_permitted_offset, cap_effective_offset;
+	int16_t cap_bset_offset, cap_ambient_offset;
+	int16_t user_offset, user_ns_offset, ucounts_offset, group_info_offset;
+	int16_t session_keyring_offset, process_keyring_offset;
+	int16_t thread_keyring_offset, request_key_auth_offset;
+	int16_t security_offset, rcu_offset;
+};
+static struct kp_kpm_cred_offset kp_kpm_cred_offset;
+
+/* arm64 GKI has no compat syscall table; legacy kpms expect the symbol. */
+static void *kp_kpm_compat_sys_call_table;
+
+static int kp_kpm_inline_wrap_syscalln(int nr, int narg, void *before,
+					void *after, void *udata)
+{
+	/* The LKM engine inline-hooks the syscall function itself, which is
+	 * what the legacy inline_wrap_syscalln ABI did on kpimg. */
+	return kp_kpm_hook_syscalln(nr, narg, before, after, udata);
+}
+
+static void kp_kpm_inline_unwrap_syscalln(int nr, void *before, void *after)
+{
+	kp_kpm_unhook_syscalln(nr, before, after);
+}
+
 /* Exclude list lives in the sucompat layer (group KSTORAGE_EXCLUDE_LIST_GROUP);
  * these thin wrappers are what KPMs see through the compatibility symbol
  * table, so the auto-loaded package_config excludes are visible to them. */
@@ -343,6 +375,10 @@ static struct kp_kpm_symbol kp_kpm_symbols[] = {
 	{ "stack_end_offset", (unsigned long)&kp_kpm_stack_end_offset },
 	{ "hook_syscalln", (unsigned long)kp_kpm_hook_syscalln },
 	{ "unhook_syscalln", (unsigned long)kp_kpm_unhook_syscalln },
+	{ "inline_wrap_syscalln", (unsigned long)kp_kpm_inline_wrap_syscalln },
+	{ "inline_unwrap_syscalln", (unsigned long)kp_kpm_inline_unwrap_syscalln },
+	{ "cred_offset", (unsigned long)&kp_kpm_cred_offset },
+	{ "compat_sys_call_table", (unsigned long)&kp_kpm_compat_sys_call_table },
 	{ "hook_compat_syscalln", (unsigned long)kp_kpm_hook_compat_syscalln },
 	{ "unhook_compat_syscalln", (unsigned long)kp_kpm_unhook_compat_syscalln },
 	{ "syscalln_addr", (unsigned long)kp_kpm_syscalln_addr },
@@ -420,6 +456,37 @@ int kp_kpm_symbols_init(void)
 	kp_kpm_mm_struct_offset.arg_end_offset = offsetof(struct mm_struct, arg_end);
 	kp_kpm_mm_struct_offset.env_start_offset = offsetof(struct mm_struct, env_start);
 	kp_kpm_mm_struct_offset.env_end_offset = offsetof(struct mm_struct, env_end);
+
+	/* Legacy ABI: standalone cred_offset struct, filled from the running
+	 * kernel's struct cred layout (compiled-in offsetof). */
+	kp_kpm_cred_offset.usage_offset = offsetof(struct cred, usage);
+	kp_kpm_cred_offset.subscribers_offset = offsetof(struct cred, subscribers);
+	kp_kpm_cred_offset.magic_offset = offsetof(struct cred, magic);
+	kp_kpm_cred_offset.uid_offset = offsetof(struct cred, uid);
+	kp_kpm_cred_offset.gid_offset = offsetof(struct cred, gid);
+	kp_kpm_cred_offset.suid_offset = offsetof(struct cred, suid);
+	kp_kpm_cred_offset.sgid_offset = offsetof(struct cred, sgid);
+	kp_kpm_cred_offset.euid_offset = offsetof(struct cred, euid);
+	kp_kpm_cred_offset.egid_offset = offsetof(struct cred, egid);
+	kp_kpm_cred_offset.fsuid_offset = offsetof(struct cred, fsuid);
+	kp_kpm_cred_offset.fsgid_offset = offsetof(struct cred, fsgid);
+	kp_kpm_cred_offset.securebits_offset = offsetof(struct cred, securebits);
+	kp_kpm_cred_offset.cap_inheritable_offset = offsetof(struct cred, cap_inheritable);
+	kp_kpm_cred_offset.cap_permitted_offset = offsetof(struct cred, cap_permitted);
+	kp_kpm_cred_offset.cap_effective_offset = offsetof(struct cred, cap_effective);
+	kp_kpm_cred_offset.cap_bset_offset = offsetof(struct cred, cap_bset);
+	kp_kpm_cred_offset.cap_ambient_offset = offsetof(struct cred, cap_ambient);
+	kp_kpm_cred_offset.user_offset = offsetof(struct cred, user);
+	kp_kpm_cred_offset.user_ns_offset = offsetof(struct cred, user_ns);
+	kp_kpm_cred_offset.ucounts_offset = offsetof(struct cred, ucounts);
+	kp_kpm_cred_offset.group_info_offset = offsetof(struct cred, group_info);
+	kp_kpm_cred_offset.session_keyring_offset = offsetof(struct cred, session_keyring);
+	kp_kpm_cred_offset.process_keyring_offset = offsetof(struct cred, process_keyring);
+	kp_kpm_cred_offset.thread_keyring_offset = offsetof(struct cred, thread_keyring);
+	kp_kpm_cred_offset.request_key_auth_offset = offsetof(struct cred, request_key_auth);
+	kp_kpm_cred_offset.security_offset = offsetof(struct cred, security);
+	kp_kpm_cred_offset.rcu_offset = offsetof(struct cred, rcu);
+	kp_kpm_compat_sys_call_table = NULL;
 
 	kp_kpm_has_config_compat = 0;
 
