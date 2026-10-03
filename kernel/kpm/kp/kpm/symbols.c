@@ -460,8 +460,13 @@ int kp_kpm_symbols_init(void)
 	/* Legacy ABI: standalone cred_offset struct, filled from the running
 	 * kernel's struct cred layout (compiled-in offsetof). */
 	kp_kpm_cred_offset.usage_offset = offsetof(struct cred, usage);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	kp_kpm_cred_offset.subscribers_offset = offsetof(struct cred, subscribers);
 	kp_kpm_cred_offset.magic_offset = offsetof(struct cred, magic);
+#else
+	kp_kpm_cred_offset.subscribers_offset = -1;
+	kp_kpm_cred_offset.magic_offset = -1;
+#endif
 	kp_kpm_cred_offset.uid_offset = offsetof(struct cred, uid);
 	kp_kpm_cred_offset.gid_offset = offsetof(struct cred, gid);
 	kp_kpm_cred_offset.suid_offset = offsetof(struct cred, suid);
